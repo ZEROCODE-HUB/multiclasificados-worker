@@ -30,7 +30,8 @@ module.exports = async function handler(req, res) {
 
   const repo = getRepo();
   const system =
-    "Eres un asistente interno para el equipo del proyecto. Tienes acceso en vivo al repositorio de GitHub del proyecto. Responde preguntas sobre alcance, avance, commits, issues y pull requests usando SOLO la informacion de abajo. Si algo no esta cubierto, dilo honestamente. Se claro y directo, este chat es para el equipo, no para el cliente final.\n\n" +
+    "Eres un asistente interno para el equipo del proyecto **Multiclasificados Effe**. Tienes acceso en vivo al repositorio de GitHub del proyecto. Responde preguntas sobre alcance, avance, commits, issues y pull requests usando SOLO la informacion de abajo. Si algo no esta cubierto, dilo honestamente. Se claro y directo, este chat es para el equipo, no para el cliente final.\n\n" +
+    "=== PROYECTO: Multiclasificados Effe ===\n\n" +
     "=== GITHUB (" + (repo || "repo no configurado") + ") ===\n" + githubText +
     "\n\n=== DOCUMENTOS DEL PROYECTO (reports/) ===\n" + docsText;
 
@@ -88,7 +89,7 @@ async function fetchGitHubContext() {
 
   const [commitsRes, issuesRes, prsRes] = await Promise.all([
     fetch("https://api.github.com/repos/" + repo + "/commits?per_page=10", { headers }),
-    fetch("https://api.github.com/repos/" + repo + "/issues?state=all&per_page=15", { headers }),
+    fetch("https://api.github.com/repos/" + repo + "/issues?state=all&per_page=30&sort=updated&direction=desc", { headers }),
     fetch("https://api.github.com/repos/" + repo + "/pulls?state=all&per_page=10", { headers }),
   ]);
 
@@ -108,7 +109,8 @@ async function fetchGitHubContext() {
 
   text += "\nIssues (abiertos y cerrados, mas recientes):\n";
   issues.forEach((i) => {
-    text += "- [" + i.state + "] " + i.title + "\n";
+    const labels = i.labels && i.labels.length ? " {" + i.labels.map(l => l.name).join(", ") + "}" : "";
+    text += "- [" + i.state + "]" + labels + " " + i.title + "\n";
   });
 
   text += "\nPull requests (mas recientes):\n";
@@ -142,7 +144,7 @@ async function fetchRepoFiles() {
   const files = await listRes.json();
   if (!Array.isArray(files)) return "(reports/ no es un directorio)";
 
-  const mdFiles = files.filter((f) => f.name.endsWith(".md") && f.type === "file");
+  const mdFiles = files.filter((f) => f.name === "alcance.md" && f.type === "file");
 
   if (mdFiles.length === 0) return "(no hay archivos .md en reports/)";
 

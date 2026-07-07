@@ -120,7 +120,7 @@ function tryEnter(){
 }
 
 function startChat(){
-  messages = [{role:'assistant', text:'Hola, tengo acceso en vivo al repo del proyecto en GitHub. Preguntame lo que necesites: commits recientes, issues abiertos, documentos de alcance y avance, etc.'}];
+  messages = [{role:'assistant', text:'Hola, soy el asistente de estado de **Multiclasificados Effe**. Puedes preguntarme sobre el alcance acordado, el avance real contra GitHub en vivo, commits, issues, PRs, funcionalidades no implementadas o bugs encontrados.'}];
   renderMessages();
   renderSuggestions();
 
@@ -140,6 +140,8 @@ var REPORT_PROMPT = "Genera un reporte de estado del proyecto en formato Markdow
   + "Fecha: [fecha de hoy]\n\n"
   + "## Alcance acordado\n"
   + "## Avance actual\n"
+  + "## Funcionalidades no implementadas\n"
+  + "## Bugs encontrados\n"
   + "## Riesgos y bloqueos\n"
   + "## Proximos pasos\n\n"
   + "Se especifico, usa vinetas, y basate solo en la informacion real disponible. No agregues texto explicativo fuera del markdown -- tu respuesta completa debe ser el reporte, nada mas.";
