@@ -52,7 +52,8 @@ En la pantalla de configuracion del proyecto (o despues, en
 | Variable | Para que sirve | Donde la consigues |
 |---|---|---|
 | `DEEPSEEK_API_KEY` | Habla con el modelo | platform.deepseek.com -> API Keys |
-| `GITHUB_TOKEN` | Lee reports/ y commits del repo (chats público e interno) | Ver Paso 4 |
+| `GITHUB_TOKEN` | Lee el repo (chats público e interno) | Ver Paso 4 |
+| `GITHUB_REPO` | Repo a analizar, ej `usuario/repo` (opcional, se auto-detecta en Vercel) | El que quieras monitorear |
 
 Aplican a los tres entornos (Production, Preview, Development) — deja las
 casillas marcadas por defecto.

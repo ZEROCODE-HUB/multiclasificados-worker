@@ -2,12 +2,11 @@
 // Consulta GitHub en vivo (commits, issues, PRs y documentos de reports/) y
 // responde usando DeepSeek.
 //
-// Variables de entorno necesarias (Vercel -> Settings -> Environment Variables):
-//   DEEPSEEK_API_KEY
-//   GITHUB_TOKEN               (Personal Access Token, solo lectura, limitado a 1 repo)
-//
-// El repo se obtiene automaticamente de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG
-// (inyectadas por Vercel al desplegar desde GitHub).
+// Variables de entorno (Vercel -> Settings -> Environment Variables):
+//   DEEPSEEK_API_KEY  (requerida)
+//   GITHUB_TOKEN       (requerida — para leer el repo via API)
+//   GITHUB_REPO        (opcional — formato "usuario/repo". Por defecto se auto-detecta
+//                       de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG en Vercel)
 //
 // Ver README.md para los pasos exactos de como generar cada credencial.
 
@@ -67,10 +66,11 @@ module.exports = async function handler(req, res) {
 // ---------- Repo ----------
 
 function getRepo() {
+  if (process.env.GITHUB_REPO) return process.env.GITHUB_REPO;
   const owner = process.env.VERCEL_GIT_REPO_OWNER;
   const slug = process.env.VERCEL_GIT_REPO_SLUG;
   if (owner && slug) return owner + "/" + slug;
-  return process.env.GITHUB_REPO;
+  return null;
 }
 
 // ---------- GitHub (commits, issues, PRs) ----------

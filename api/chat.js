@@ -4,10 +4,9 @@
 //
 // Variables de entorno (Vercel -> Settings -> Environment Variables):
 //   DEEPSEEK_API_KEY  (requerida)
-//   GITHUB_TOKEN       (opcional — permite leer reports/, commits y codigo en vivo)
-//
-// El repo se obtiene automaticamente de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG
-// (inyectadas por Vercel al desplegar desde GitHub).
+//   GITHUB_TOKEN       (requerida — para leer el repo via API)
+//   GITHUB_REPO        (opcional — formato "usuario/repo". Por defecto se auto-detecta
+//                       de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG en Vercel)
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
@@ -71,10 +70,11 @@ module.exports = async function handler(req, res) {
 // ---------- Repo ----------
 
 function getRepo() {
+  if (process.env.GITHUB_REPO) return process.env.GITHUB_REPO;
   const owner = process.env.VERCEL_GIT_REPO_OWNER;
   const slug = process.env.VERCEL_GIT_REPO_SLUG;
   if (owner && slug) return owner + "/" + slug;
-  return process.env.GITHUB_REPO;
+  return null;
 }
 
 // ---------- System prompt ----------
@@ -127,7 +127,7 @@ async function fetchRepoFiles(token, repo) {
   const files = await listRes.json();
   if (!Array.isArray(files)) return "";
 
-  const mdFiles = files.filter((f) => f.name.endsWith(".md") && f.type === "file");
+  const mdFiles = files.filter((f) => f.name === "alcance.md" && f.type === "file");
   if (mdFiles.length === 0) return "";
 
   const parts = [];
