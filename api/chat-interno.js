@@ -1,17 +1,15 @@
 // Funcion serverless de Vercel (Node.js) para el chat interno del equipo.
-// Consulta GitHub y una carpeta especifica de Google Drive en vivo, y
+// Consulta GitHub en vivo (commits, issues, PRs y documentos de reports/) y
 // responde usando DeepSeek.
 //
 // Variables de entorno necesarias (Vercel -> Settings -> Environment Variables):
 //   DEEPSEEK_API_KEY
 //   GITHUB_TOKEN               (Personal Access Token, solo lectura, limitado a 1 repo)
-//   GITHUB_REPO                (formato "usuario/repositorio")
-//   GOOGLE_SERVICE_ACCOUNT_KEY (el JSON completo de la cuenta de servicio, en una sola linea)
-//   GOOGLE_DRIVE_FOLDER_ID     (el ID de la carpeta de Drive a leer)
+//
+// El repo se obtiene automaticamente de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG
+// (inyectadas por Vercel al desplegar desde GitHub).
 //
 // Ver README.md para los pasos exactos de como generar cada credencial.
-
-const crypto = require("crypto");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
@@ -26,15 +24,16 @@ module.exports = async function handler(req, res) {
   }
   const trimmedMessages = messages.slice(-20);
 
-  const [githubText, driveText] = await Promise.all([
+  const [githubText, docsText] = await Promise.all([
     fetchGitHubContext().catch((e) => "(No se pudo leer GitHub: " + e.message + ")"),
-    fetchDriveContext().catch((e) => "(No se pudo leer Google Drive: " + e.message + ")"),
+    fetchRepoFiles().catch((e) => "(No se pudieron leer los documentos: " + e.message + ")"),
   ]);
 
+  const repo = getRepo();
   const system =
-    "Eres un asistente interno para el equipo del proyecto. Tienes acceso en vivo al repositorio de GitHub y a la carpeta de Google Drive del proyecto. Responde preguntas sobre alcance, avance, commits, issues y pull requests usando SOLO la informacion de abajo. Si algo no esta cubierto, dilo honestamente. Se claro y directo, este chat es para el equipo, no para el cliente final.\n\n" +
-    "=== GITHUB (" + (process.env.GITHUB_REPO || "repo no configurado") + ") ===\n" + githubText +
-    "\n\n=== GOOGLE DRIVE (carpeta del proyecto) ===\n" + driveText;
+    "Eres un asistente interno para el equipo del proyecto. Tienes acceso en vivo al repositorio de GitHub del proyecto. Responde preguntas sobre alcance, avance, commits, issues y pull requests usando SOLO la informacion de abajo. Si algo no esta cubierto, dilo honestamente. Se claro y directo, este chat es para el equipo, no para el cliente final.\n\n" +
+    "=== GITHUB (" + (repo || "repo no configurado") + ") ===\n" + githubText +
+    "\n\n=== DOCUMENTOS DEL PROYECTO (reports/) ===\n" + docsText;
 
   const deepseekMessages = [{ role: "system", content: system }, ...trimmedMessages];
 
@@ -65,11 +64,20 @@ module.exports = async function handler(req, res) {
   }
 };
 
-// ---------- GitHub ----------
+// ---------- Repo ----------
+
+function getRepo() {
+  const owner = process.env.VERCEL_GIT_REPO_OWNER;
+  const slug = process.env.VERCEL_GIT_REPO_SLUG;
+  if (owner && slug) return owner + "/" + slug;
+  return process.env.GITHUB_REPO;
+}
+
+// ---------- GitHub (commits, issues, PRs) ----------
 
 async function fetchGitHubContext() {
   const token = process.env.GITHUB_TOKEN;
-  const repo = process.env.GITHUB_REPO;
+  const repo = getRepo();
   if (!token || !repo) return "(GitHub no configurado)";
 
   const headers = {
@@ -112,91 +120,44 @@ async function fetchGitHubContext() {
   return text;
 }
 
-// ---------- Google Drive ----------
+// ---------- Documentos de reports/ (alcance, avance, etc.) ----------
 
-async function fetchDriveContext() {
-  const saKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  if (!saKey || !folderId) return "(Google Drive no configurado)";
+async function fetchRepoFiles() {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = getRepo();
+  if (!token || !repo) return "(repositorio no configurado)";
 
-  const accessToken = await getGoogleAccessToken(saKey);
-  const query = "'" + folderId + "' in parents and trashed = false";
-  const listUrl =
-    "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(query) +
-    "&fields=" + encodeURIComponent("files(id,name,mimeType)") + "&pageSize=50";
-
-  const listRes = await fetch(listUrl, { headers: { Authorization: "Bearer " + accessToken } });
-  const listData = await listRes.json();
-
-  if (!listData.files || listData.files.length === 0) {
-    return "(La carpeta esta vacia o la cuenta de servicio no tiene acceso a ella)";
-  }
-
-  const parts = [];
-  for (const f of listData.files) {
-    let content = "";
-    try {
-      if (f.mimeType === "application/vnd.google-apps.document") {
-        const exportRes = await fetch(
-          "https://www.googleapis.com/drive/v3/files/" + f.id + "/export?mimeType=text/plain",
-          { headers: { Authorization: "Bearer " + accessToken } }
-        );
-        content = await exportRes.text();
-      } else if (f.mimeType === "text/plain" || f.mimeType === "text/markdown" || /\.(md|txt)$/i.test(f.name)) {
-        const mediaRes = await fetch(
-          "https://www.googleapis.com/drive/v3/files/" + f.id + "?alt=media",
-          { headers: { Authorization: "Bearer " + accessToken } }
-        );
-        content = await mediaRes.text();
-      } else {
-        content = "(tipo de archivo no soportado para lectura automatica: " + f.mimeType + ")";
-      }
-    } catch (e) {
-      content = "(no se pudo leer este archivo)";
-    }
-    parts.push("## " + f.name + "\n" + content);
-  }
-  return parts.join("\n\n");
-}
-
-async function getGoogleAccessToken(serviceAccountJson) {
-  const key = JSON.parse(serviceAccountJson);
-  const header = { alg: "RS256", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
-  const claimSet = {
-    iss: key.client_email,
-    scope: "https://www.googleapis.com/auth/drive.readonly",
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600,
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "chat-interno-zerocode",
   };
 
-  const encHeader = base64url(JSON.stringify(header));
-  const encClaim = base64url(JSON.stringify(claimSet));
-  const signInput = encHeader + "." + encClaim;
+  const listRes = await fetch(
+    "https://api.github.com/repos/" + repo + "/contents/reports",
+    { headers }
+  );
+  if (!listRes.ok) return "(no se pudo leer la carpeta reports/)";
 
-  const signer = crypto.createSign("RSA-SHA256");
-  signer.update(signInput);
-  signer.end();
-  const signature = signer.sign(key.private_key); // Buffer
+  const files = await listRes.json();
+  if (!Array.isArray(files)) return "(reports/ no es un directorio)";
 
-  const jwt = signInput + "." + base64url(signature);
+  const mdFiles = files.filter((f) => f.name.endsWith(".md") && f.type === "file");
 
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:
-      "grant_type=" + encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer") +
-      "&assertion=" + encodeURIComponent(jwt),
-  });
-  const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) {
-    throw new Error("No se pudo autenticar con Google (" + JSON.stringify(tokenData) + ")");
+  if (mdFiles.length === 0) return "(no hay archivos .md en reports/)";
+
+  const parts = [];
+  for (const f of mdFiles) {
+    const contentRes = await fetch(
+      "https://api.github.com/repos/" + repo + "/contents/reports/" + f.name,
+      { headers }
+    );
+    if (!contentRes.ok) continue;
+    const data = await contentRes.json();
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
+    const label = f.name.replace(/\.md$/i, "");
+    parts.push("## " + label + "\n" + content);
   }
-  return tokenData.access_token;
-}
 
-function base64url(input) {
-  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8");
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return parts.length ? parts.join("\n\n") : "(no hay archivos .md en reports/)";
 }

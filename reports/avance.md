@@ -7,5 +7,4 @@
 Notas: sin bloqueos activos.
 
 Edita este archivo cada vez que quieras actualizar el estado. Puedes pegar
-aqui la comparacion que te genere Claude entre tu repo de GitHub y tu
-documento de alcance en Drive.
+aqui la comparacion que te genere el chat interno sobre tu repo de GitHub.

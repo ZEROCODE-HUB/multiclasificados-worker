@@ -5,4 +5,4 @@
 - Entregable 3: Integracion de pagos
 
 Edita este archivo para reflejar el alcance real acordado con el cliente.
-Puedes pegar aqui directamente el contenido de tu documento de Drive.
+Pon aqui tantos documentos .md como necesites dentro de reports/.

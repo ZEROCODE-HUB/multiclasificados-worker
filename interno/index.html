@@ -63,7 +63,7 @@
 <div id="gate">
   <img src="../assets/logo.png" alt="Logo" onerror="this.style.display='none'" />
   <h2>Asistente interno del proyecto</h2>
-  <p>Acceso solo para el equipo. Este chat lee el repositorio de GitHub y la carpeta de Drive del proyecto en vivo.</p>
+  <p>Acceso solo para el equipo. Este chat lee el repositorio de GitHub del proyecto en vivo.</p>
   <input type="password" id="accessInput" placeholder="Frase de acceso del equipo" />
   <button id="enterBtn">Entrar</button>
   <div class="err" id="gateErr">Frase incorrecta, intenta de nuevo.</div>
@@ -73,7 +73,7 @@
   <div class="brand-bar"><img src="../assets/logo.png" alt="Logo" onerror="this.style.display='none'" /></div>
   <div class="header">
     <div class="proj-name">Asistente interno del proyecto</div>
-    <div class="proj-meta">Conectado a GitHub y Google Drive en vivo</div>
+    <div class="proj-meta">Conectado a GitHub en vivo</div>
   </div>
   <div class="messages" id="messagesEl"></div>
   <div class="suggestions" id="suggestionsEl"></div>
@@ -120,7 +120,7 @@ function tryEnter(){
 }
 
 function startChat(){
-  messages = [{role:'assistant', text:'Hola, tengo acceso en vivo al repo y a la carpeta de Drive del proyecto. Preguntame lo que necesites: commits recientes, issues abiertos, contenido de los documentos, comparacion de alcance vs avance, etc.'}];
+  messages = [{role:'assistant', text:'Hola, tengo acceso en vivo al repo del proyecto en GitHub. Preguntame lo que necesites: commits recientes, issues abiertos, documentos de alcance y avance, etc.'}];
   renderMessages();
   renderSuggestions();
 
@@ -135,7 +135,7 @@ function startChat(){
   });
 }
 
-var REPORT_PROMPT = "Genera un reporte de estado del proyecto en formato Markdown, listo para guardarse como archivo .md. Usa EXACTAMENTE esta estructura de encabezados (rellena el contenido con la informacion real de GitHub y Drive que tienes disponible):\n\n"
+var REPORT_PROMPT = "Genera un reporte de estado del proyecto en formato Markdown, listo para guardarse como archivo .md. Usa EXACTAMENTE esta estructura de encabezados (rellena el contenido con la informacion real de GitHub que tienes disponible):\n\n"
   + "# Reporte de estado del proyecto\n"
   + "Fecha: [fecha de hoy]\n\n"
   + "## Alcance acordado\n"
