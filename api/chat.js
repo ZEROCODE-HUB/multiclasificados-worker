@@ -1,8 +1,13 @@
-// Funcion serverless de Vercel (Node.js). Se despliega sola con solo tener
-// este archivo en /api -- Vercel la detecta automaticamente.
+// Funcion serverless de Vercel (Node.js) para el chat publico del cliente.
+// Lee los documentos del proyecto y la actividad del repositorio desde
+// GitHub API en vivo, y responde usando DeepSeek.
 //
-// Variable de entorno necesaria (Vercel -> Settings -> Environment Variables):
-//   DEEPSEEK_API_KEY
+// Variables de entorno (Vercel -> Settings -> Environment Variables):
+//   DEEPSEEK_API_KEY  (requerida)
+//   GITHUB_TOKEN       (opcional — permite leer reports/ y commits en vivo)
+//
+// El repo se obtiene automaticamente de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG
+// (inyectadas por Vercel al desplegar desde GitHub).
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
@@ -10,14 +15,29 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { system, messages } = req.body || {};
+  const { messages, project } = req.body || {};
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: "Falta 'messages'" });
     return;
   }
-
   const trimmedMessages = messages.slice(-20);
-  const deepseekMessages = [{ role: "system", content: system || "" }, ...trimmedMessages];
+
+  const token = process.env.GITHUB_TOKEN;
+  const repo = getRepo();
+
+  let docsText = "";
+  let githubText = "";
+
+  if (token && repo) {
+    [docsText, githubText] = await Promise.all([
+      fetchRepoFiles(token, repo).catch(() => ""),
+      fetchGitHubContext(token, repo).catch(() => ""),
+    ]);
+  }
+
+  const system = buildSystemPrompt(project, docsText, githubText);
+
+  const deepseekMessages = [{ role: "system", content: system }, ...trimmedMessages];
 
   try {
     const deepseekResponse = await fetch("https://api.deepseek.com/chat/completions", {
@@ -45,3 +65,107 @@ module.exports = async function handler(req, res) {
     res.status(500).json({ error: e.message });
   }
 };
+
+// ---------- Repo ----------
+
+function getRepo() {
+  const owner = process.env.VERCEL_GIT_REPO_OWNER;
+  const slug = process.env.VERCEL_GIT_REPO_SLUG;
+  if (owner && slug) return owner + "/" + slug;
+  return process.env.GITHUB_REPO;
+}
+
+// ---------- System prompt ----------
+
+function buildSystemPrompt(project, docsText, githubText) {
+  let system =
+    "Eres un asistente amable que informa a un cliente externo sobre el estado de su proyecto. " +
+    "Responde SOLO con base en los documentos y la actividad del repositorio que se muestran abajo. " +
+    "Tu tarea principal es COMPARAR lo acordado en los documentos de alcance con lo que realmente " +
+    "se ha hecho (commits). Si hay diferencias, señalalas con claridad. " +
+    "Se breve, claro y profesional. Si te preguntan algo que no esta cubierto, dilo honestamente " +
+    "y ofrece que el equipo lo confirmara. " +
+    "Nunca inventes fechas, porcentajes ni detalles que no esten aqui.\n\n";
+
+  if (project) {
+    system += "Nombre del proyecto: " + (project.name || "Proyecto") + "\n";
+    system += "Estado general: " + (project.health || "En curso") + "\n";
+    if (project.updatedAt) system += "Ultima actualizacion: " + project.updatedAt + "\n";
+    system += "\n";
+  }
+
+  if (docsText) system += "=== DOCUMENTOS DEL PROYECTO ===\n" + docsText + "\n\n";
+  if (githubText) system += "=== ACTIVIDAD RECIENTE DEL REPOSITORIO ===\n" + githubText;
+
+  if (!docsText && !githubText) {
+    system += "(No hay informacion del proyecto disponible en este momento. Responde indicando que los datos no estan disponibles.)";
+  }
+
+  return system;
+}
+
+// ---------- Documentos de reports/ ----------
+
+async function fetchRepoFiles(token, repo) {
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "chat-publico-zerocode",
+  };
+
+  const listRes = await fetch(
+    "https://api.github.com/repos/" + repo + "/contents/reports",
+    { headers }
+  );
+  if (!listRes.ok) return "";
+
+  const files = await listRes.json();
+  if (!Array.isArray(files)) return "";
+
+  const mdFiles = files.filter((f) => f.name.endsWith(".md") && f.type === "file");
+  if (mdFiles.length === 0) return "";
+
+  const parts = [];
+  for (const f of mdFiles) {
+    const contentRes = await fetch(
+      "https://api.github.com/repos/" + repo + "/contents/reports/" + f.name,
+      { headers }
+    );
+    if (!contentRes.ok) continue;
+    const data = await contentRes.json();
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
+    const label = f.name.replace(/\.md$/i, "");
+    parts.push("## " + label + "\n" + content);
+  }
+
+  return parts.join("\n\n");
+}
+
+// ---------- Commits recientes ----------
+
+async function fetchGitHubContext(token, repo) {
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "chat-publico-zerocode",
+  };
+
+  const commitsRes = await fetch(
+    "https://api.github.com/repos/" + repo + "/commits?per_page=10",
+    { headers }
+  );
+
+  if (!commitsRes.ok) return "";
+
+  const commits = await commitsRes.json();
+  if (!Array.isArray(commits)) return "";
+
+  let text = "Commits recientes:\n";
+  commits.forEach((c) => {
+    const msg = c.commit && c.commit.message ? c.commit.message.split("\n")[0] : "(sin mensaje)";
+    const date = c.commit && c.commit.author ? c.commit.author.date : "";
+    text += "- " + msg + " (" + date + ")\n";
+  });
+
+  return text;
+}

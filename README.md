@@ -52,7 +52,7 @@ En la pantalla de configuracion del proyecto (o despues, en
 | Variable | Para que sirve | Donde la consigues |
 |---|---|---|
 | `DEEPSEEK_API_KEY` | Habla con el modelo | platform.deepseek.com -> API Keys |
-| `GITHUB_TOKEN` | Lee tu repo (solo el interno) | Ver Paso 4 |
+| `GITHUB_TOKEN` | Lee reports/ y commits del repo (chats público e interno) | Ver Paso 4 |
 
 Aplican a los tres entornos (Production, Preview, Development) — deja las
 casillas marcadas por defecto.

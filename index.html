@@ -110,10 +110,6 @@
 const PROXY_URL = "/api/chat";
 const LOGO_PATH = "./assets/logo.png";
 const STATUS_PATH = "./reports/status.json";
-const DOCUMENTS = [
-  { label: "Alcance acordado", path: "./reports/alcance.md" },
-  { label: "Avance actual",    path: "./reports/avance.md" }
-];
 /* ============================================================ */
 
 const HEALTH = {
@@ -123,7 +119,6 @@ const HEALTH = {
 };
 
 var projectStatus = null;
-var documentsText = "";
 var messages = [];
 var loading = false;
 var refreshing = false;
@@ -147,18 +142,6 @@ async function loadData(){
   }catch(e){
     projectStatus = { projectName:"Proyecto", health:"ontrack", updatedAt:new Date().toISOString() };
   }
-
-  var parts = [];
-  for(var i=0;i<DOCUMENTS.length;i++){
-    try{
-      var r = await fetch(DOCUMENTS[i].path, {cache:"no-store"});
-      if(r.ok){
-        var text = await r.text();
-        parts.push("## " + DOCUMENTS[i].label + "\n" + text);
-      }
-    }catch(e){ /* si un documento falla, seguimos con los demas */ }
-  }
-  documentsText = parts.join("\n\n");
 }
 
 function render(){
@@ -232,19 +215,17 @@ async function sendMessage(text){
   loading = true;
   render();
 
-  var system = 'Eres un asistente amable que informa a un cliente externo sobre el estado de su proyecto. Responde SOLO con base en los documentos de abajo (alcance acordado y avance actual). Se breve, claro y profesional. Si te preguntan algo que no esta cubierto en estos documentos, dilo honestamente y ofrece que el equipo lo confirmara. Nunca inventes fechas, porcentajes ni detalles que no esten aqui.\n\n'
-    + 'Nombre del proyecto: ' + projectStatus.projectName + '\n'
-    + 'Estado general: ' + (HEALTH[projectStatus.health] || HEALTH.ontrack).label + '\n'
-    + 'Ultima actualizacion: ' + formatDate(projectStatus.updatedAt) + '\n\n'
-    + documentsText;
-
   try{
     var response = await fetch(PROXY_URL, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        system: system,
-        messages: messages.map(function(m){ return {role: m.role === 'client' ? 'user' : 'assistant', content: m.text}; })
+        messages: messages.map(function(m){ return {role: m.role === 'client' ? 'user' : 'assistant', content: m.text}; }),
+        project: {
+          name: projectStatus.projectName,
+          health: (HEALTH[projectStatus.health] || HEALTH.ontrack).label,
+          updatedAt: formatDate(projectStatus.updatedAt)
+        }
       })
     });
     if(!response.ok){ throw new Error("El proxy respondio con error " + response.status); }
@@ -264,7 +245,7 @@ async function sendMessage(text){
 
 (async function init(){
   await loadData();
-  messages = [{role:'assistant', text:'Hola, soy el asistente de estado de ' + projectStatus.projectName + '. Puedes preguntarme sobre el avance, los entregables o el alcance acordado.'}];
+    messages = [{role:'assistant', text:'Hola, soy el asistente de estado de ' + projectStatus.projectName + '. Puedes preguntarme sobre el avance, los entregables, el alcance acordado o comparar el progreso real con lo planeado.'}];
   render();
 })();
 </script>
