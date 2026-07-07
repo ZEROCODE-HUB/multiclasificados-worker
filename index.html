@@ -91,6 +91,12 @@
   .suggestions{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 14px;}
   .chip{font-family:'Inter',sans-serif;font-size:12.5px;color:var(--brand-navy);background:var(--teal-soft);border:none;padding:7px 12px;border-radius:20px;cursor:pointer;transition:filter .15s;}
   .chip:hover{filter:brightness(0.96);}
+  .toolbar{padding:0 18px 12px;display:flex;justify-content:flex-end;}
+  .report-btn{font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;color:var(--brand-navy);background:var(--panel);border:1px solid var(--line);padding:8px 13px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+  .report-btn:hover{background:var(--teal-soft);}
+  .report-btn:disabled{opacity:.5;cursor:default;}
+  .download-link{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;color:var(--brand-navy);background:var(--teal-soft);border:none;padding:7px 12px;border-radius:8px;cursor:pointer;}
+  .download-link:hover{filter:brightness(0.97);}
   .input-bar{border-top:1px solid var(--line);padding:12px 14px;display:flex;gap:8px;align-items:flex-end;background:var(--panel);}
   .input-bar textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-family:'Inter',sans-serif;font-size:14px;line-height:1.4;max-height:90px;outline:none;color:var(--ink);}
   .input-bar textarea:focus{border-color:var(--brand-cyan);}
@@ -162,7 +168,14 @@ function render(){
 
   html += '<div class="messages" id="messagesEl">';
   for(var i=0;i<messages.length;i++){
-    html += '<div class="msg ' + messages[i].role + '">' + escapeHtml(messages[i].text) + '</div>';
+    var inner = '<div class="msg ' + messages[i].role + '">' + escapeHtml(messages[i].text);
+    if(messages[i].isReport && messages[i].role === 'assistant'){
+      inner += '<button class="download-link" data-idx="' + i + '">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>'
+        + ' Descargar .md</button>';
+    }
+    inner += '</div>';
+    html += inner;
   }
   if(loading){
     html += '<div class="msg typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
@@ -177,6 +190,10 @@ function render(){
     html += '</div>';
   }
 
+  html += '<div class="toolbar"><button class="report-btn" id="reportBtn" ' + (loading ? 'disabled' : '') + '>'
+    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>'
+    + ' Generar reporte (.md)</button></div>';
+
   html += '<div class="input-bar"><textarea id="inputEl" rows="1" placeholder="Escribe tu pregunta..."></textarea>';
   html += '<button class="send-btn" id="sendBtn" ' + (loading ? 'disabled' : '') + '>';
   html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
@@ -187,8 +204,17 @@ function render(){
 
   var messagesEl = document.getElementById('messagesEl');
   if(messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+  messagesEl.querySelectorAll('.download-link').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var idx = parseInt(btn.getAttribute('data-idx'), 10);
+      downloadMarkdown(messages[idx].text);
+    });
+  });
 
   document.getElementById('refreshBtn').addEventListener('click', refreshData);
+  document.getElementById('reportBtn').addEventListener('click', function(){
+    sendMessage(REPORT_PROMPT, { displayText: 'Generar reporte de estado en Markdown', isReport: true });
+  });
   var inputEl = document.getElementById('inputEl');
   var sendBtn = document.getElementById('sendBtn');
   sendBtn.addEventListener('click', function(){ sendMessage(inputEl.value); });
@@ -200,6 +226,28 @@ function render(){
   });
 }
 
+var REPORT_PROMPT = "Genera un reporte de estado del proyecto en formato Markdown, listo para guardarse como archivo .md. Usa EXACTAMENTE esta estructura de encabezados (rellena el contenido con la informacion real del repositorio que tienes disponible):\n\n"
+  + "# Reporte de estado del proyecto\n"
+  + "Fecha: [fecha de hoy]\n\n"
+  + "## Alcance acordado\n"
+  + "## Avance actual\n"
+  + "## Riesgos y bloqueos\n"
+  + "## Proximos pasos\n\n"
+  + "Se especifico, usa vinetas, y basate solo en la informacion real disponible. No agregues texto explicativo fuera del markdown -- tu respuesta completa debe ser el reporte, nada mas.";
+
+function downloadMarkdown(text){
+  var blob = new Blob([text], { type: 'text/markdown' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var fecha = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = 'reporte-estado-' + fecha + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function refreshData(){
   refreshing = true;
   render();
@@ -209,38 +257,52 @@ async function refreshData(){
   render();
 }
 
-async function sendMessage(text){
+function sendMessage(text, opts){
+  opts = opts || {};
   if(!text || !text.trim() || loading) return;
-  messages.push({role:'client', text: text.trim()});
+
+  var displayText = opts.displayText || text.trim();
+  var payloadForDisplay = { role:'client', text: displayText };
+
+  var apiMessages = messages.map(function(m){ return {role: m.role === 'client' ? 'user' : 'assistant', content: m.text}; });
+  apiMessages.push({role:'user', content: text.trim()});
+
+  messages.push(payloadForDisplay);
   loading = true;
   render();
+  document.getElementById('inputEl').value = '';
 
-  try{
-    var response = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        messages: messages.map(function(m){ return {role: m.role === 'client' ? 'user' : 'assistant', content: m.text}; }),
-        project: {
-          name: projectStatus.projectName,
-          health: (HEALTH[projectStatus.health] || HEALTH.ontrack).label,
-          updatedAt: formatDate(projectStatus.updatedAt)
-        }
-      })
-    });
-    if(!response.ok){ throw new Error("El proxy respondio con error " + response.status); }
-    var data = await response.json();
+  fetch(PROXY_URL, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      messages: apiMessages,
+      project: {
+        name: projectStatus.projectName,
+        health: (HEALTH[projectStatus.health] || HEALTH.ontrack).label,
+        updatedAt: formatDate(projectStatus.updatedAt)
+      }
+    })
+  })
+  .then(function(response){
+    if(!response.ok) throw new Error("El proxy respondio con error " + response.status);
+    return response.json();
+  })
+  .then(function(data){
     var textBlock = null;
     if(data.content){
       for(var k=0;k<data.content.length;k++){ if(data.content[k].type === 'text'){ textBlock = data.content[k]; break; } }
     }
     var replyText = textBlock ? textBlock.text : "No pude generar una respuesta en este momento.";
-    messages.push({role:'assistant', text: replyText});
-  }catch(e){
+    messages.push({role:'assistant', text: replyText, isReport: !!opts.isReport});
+    loading = false;
+    render();
+  })
+  .catch(function(e){
     messages.push({role:'error', text:"No se pudo conectar con el asistente (" + e.message + "). Si eres del equipo: revisa que PROXY_URL este bien configurado en index.html y que el Worker este desplegado."});
-  }
-  loading = false;
-  render();
+    loading = false;
+    render();
+  });
 }
 
 (async function init(){

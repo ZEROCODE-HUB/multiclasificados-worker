@@ -1,10 +1,10 @@
 // Funcion serverless de Vercel (Node.js) para el chat publico del cliente.
-// Lee los documentos del proyecto y la actividad del repositorio desde
-// GitHub API en vivo, y responde usando DeepSeek.
+// Lee los documentos del proyecto, la actividad del repositorio y el codigo
+// fuente desde GitHub API en vivo, y responde usando DeepSeek.
 //
 // Variables de entorno (Vercel -> Settings -> Environment Variables):
 //   DEEPSEEK_API_KEY  (requerida)
-//   GITHUB_TOKEN       (opcional — permite leer reports/ y commits en vivo)
+//   GITHUB_TOKEN       (opcional — permite leer reports/, commits y codigo en vivo)
 //
 // El repo se obtiene automaticamente de VERCEL_GIT_REPO_OWNER + VERCEL_GIT_REPO_SLUG
 // (inyectadas por Vercel al desplegar desde GitHub).
@@ -27,15 +27,17 @@ module.exports = async function handler(req, res) {
 
   let docsText = "";
   let githubText = "";
+  let sourceText = "";
 
   if (token && repo) {
-    [docsText, githubText] = await Promise.all([
+    [docsText, githubText, sourceText] = await Promise.all([
       fetchRepoFiles(token, repo).catch(() => ""),
       fetchGitHubContext(token, repo).catch(() => ""),
+      fetchSourceCode(token, repo).catch(() => ""),
     ]);
   }
 
-  const system = buildSystemPrompt(project, docsText, githubText);
+  const system = buildSystemPrompt(project, docsText, githubText, sourceText);
 
   const deepseekMessages = [{ role: "system", content: system }, ...trimmedMessages];
 
@@ -77,12 +79,14 @@ function getRepo() {
 
 // ---------- System prompt ----------
 
-function buildSystemPrompt(project, docsText, githubText) {
+function buildSystemPrompt(project, docsText, githubText, sourceText) {
   let system =
     "Eres un asistente amable que informa a un cliente externo sobre el estado de su proyecto. " +
-    "Responde SOLO con base en los documentos y la actividad del repositorio que se muestran abajo. " +
+    "Responde SOLO con base en la informacion que se muestra abajo. " +
     "Tu tarea principal es COMPARAR lo acordado en los documentos de alcance con lo que realmente " +
-    "se ha hecho (commits). Si hay diferencias, señalalas con claridad. " +
+    "se ha desarrollado en el codigo. " +
+    "Tambien puedes analizar el codigo fuente para detectar posibles errores, inconsistencias o " +
+    "funcionalidades faltantes respecto al alcance. " +
     "Se breve, claro y profesional. Si te preguntan algo que no esta cubierto, dilo honestamente " +
     "y ofrece que el equipo lo confirmara. " +
     "Nunca inventes fechas, porcentajes ni detalles que no esten aqui.\n\n";
@@ -95,9 +99,10 @@ function buildSystemPrompt(project, docsText, githubText) {
   }
 
   if (docsText) system += "=== DOCUMENTOS DEL PROYECTO ===\n" + docsText + "\n\n";
-  if (githubText) system += "=== ACTIVIDAD RECIENTE DEL REPOSITORIO ===\n" + githubText;
+  if (githubText) system += "=== ACTIVIDAD RECIENTE DEL REPOSITORIO ===\n" + githubText + "\n\n";
+  if (sourceText) system += "=== CODIGO FUENTE DEL REPOSITORIO ===\n" + sourceText;
 
-  if (!docsText && !githubText) {
+  if (!docsText && !githubText && !sourceText) {
     system += "(No hay informacion del proyecto disponible en este momento. Responde indicando que los datos no estan disponibles.)";
   }
 
@@ -168,4 +173,64 @@ async function fetchGitHubContext(token, repo) {
   });
 
   return text;
+}
+
+// ---------- Codigo fuente del repositorio ----------
+
+const SOURCE_EXTENSIONS = new Set([".js", ".html", ".css", ".json", ".md", ".mjs", ".cjs", ".ts", ".jsx", ".tsx"]);
+
+async function fetchSourceCode(token, repo) {
+  const headers = {
+    Authorization: "Bearer " + token,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "chat-publico-zerocode",
+  };
+
+  const treeRes = await fetch(
+    "https://api.github.com/repos/" + repo + "/git/trees/main?recursive=1",
+    { headers }
+  );
+  if (!treeRes.ok) return "";
+
+  const treeData = await treeRes.json();
+  if (!treeData.tree) return "";
+
+  const blobs = treeData.tree.filter(
+    (f) => f.type === "blob" && !f.path.startsWith(".")
+  );
+
+  let treeText = "Estructura del repositorio:\n";
+  for (const f of blobs) {
+    treeText += "  " + f.path + "\n";
+  }
+
+  const sourceBlobs = blobs.filter((f) => {
+    const dot = f.path.lastIndexOf(".");
+    if (dot === -1) return false;
+    return SOURCE_EXTENSIONS.has(f.path.slice(dot));
+  });
+
+  const MAX_FILES = 30;
+  const MAX_LINES_PER_FILE = 300;
+
+  const parts = [];
+  for (const f of sourceBlobs.slice(0, MAX_FILES)) {
+    const contentRes = await fetch(
+      "https://api.github.com/repos/" + repo + "/contents/" + f.path,
+      { headers }
+    );
+    if (!contentRes.ok) continue;
+    const data = await contentRes.json();
+    if (data.encoding !== "base64" || !data.content) continue;
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
+    const lines = content.split("\n");
+    const truncated = lines.length > MAX_LINES_PER_FILE
+      ? lines.slice(0, MAX_LINES_PER_FILE).join("\n") + "\n... (" + (lines.length - MAX_LINES_PER_FILE) + " lineas mas)"
+      : content;
+    parts.push("### " + f.path + "\n```\n" + truncated + "\n```");
+  }
+
+  if (parts.length === 0) return treeText;
+
+  return treeText + "\n\n" + parts.join("\n\n");
 }
